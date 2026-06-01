@@ -302,3 +302,98 @@ def menu_message(sock, username):
 
         else:
             safe_print("  [!] Pilihan tidak valid.")
+
+#  KONEKSI & REGISTRASI
+def connect_and_run(host, port, mode_label):
+    print(f"\n[CLIENT - {mode_label}]")
+    username = input("  Masukkan username Anda: ").strip()
+    while not username:
+        safe_print("  [!] Username tidak boleh kosong.")
+        username = input("  Masukkan username Anda: ").strip()
+
+    print(f"Menghubungkan ke {host}:{port} ...")
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((host, port))
+    except ConnectionRefusedError:
+        safe_print(f"[!] Koneksi ditolak. Pastikan server berjalan di {host}:{port}")
+        return
+    except Exception as e:
+        safe_print(f"[!] Error koneksi: {e}")
+        return
+
+    # ── Registrasi ──
+    try:
+        send_header(sock, {"type": "register", "username": username})
+    except Exception as e:
+        safe_print(f"[!] Gagal kirim registrasi: {e}")
+        sock.close()
+        return
+
+    # ── Mulai thread listener ──
+    t = threading.Thread(
+        target=listener_thread,
+        args=(sock, username),
+        daemon=True,
+        name=f"Listener-{username}"
+    )
+    t.start()
+    time.sleep(0.5)  # beri waktu listener memproses register_ack
+
+    safe_print(f"\n[+] Berhasil terhubung sebagai '{username}'")
+    safe_print(f"    Server: {host}:{port}  |  Mode: {mode_label}")
+
+    # ── Menu pengiriman ──
+    try:
+        menu_message(sock, username)
+    finally:
+        sock.close()
+
+#  MENU UTAMA
+
+def menu_main():
+    print("\n" + "="*55)
+    print("        CLIENT SOCKET PROGRAMMING")
+    print("="*55)
+    print("  Pilih Mode Server:")
+    print("  1. Unicast - Single-thread (port 9090)")
+    print("  2. Unicast - Multi-thread  (port 9091)")
+    print("  0. Keluar")
+    print("="*55)
+
+    choice = input("  Pilihan: ").strip()
+
+    if choice == "0":
+        print("Keluar.")
+        sys.exit(0)
+
+    if choice not in ("1", "2"):
+        safe_print("[!] Pilihan tidak valid.")
+        return
+
+    host = input("  Host server (default: 127.0.0.1): ").strip() or "127.0.0.1"
+
+    if choice == "1":
+        port_input = input(f"  Port (default: {PORT_SINGLE}): ").strip()
+        port = int(port_input) if port_input.isdigit() else PORT_SINGLE
+        connect_and_run(host, port, "Unicast Single-thread")
+    elif choice == "2":
+        port_input = input(f"  Port (default: {PORT_MULTI}): ").strip()
+        port = int(port_input) if port_input.isdigit() else PORT_MULTI
+        connect_and_run(host, port, "Unicast Multi-thread")
+
+def main():
+    while True:
+        menu_main()
+        again = input("\nKembali ke menu utama? (y/n): ").strip().lower()
+        if again != "y":
+            print("Program selesai.")
+            break
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        input("Tekan Enter untuk keluar...")
