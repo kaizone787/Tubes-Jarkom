@@ -252,3 +252,89 @@ def _broadcast_client_list():
             send_header(conn, payload)
         except Exception:
             pass
+
+#  SERVER SINGLE-THREAD
+
+class UnicastSingleServer:
+    def __init__(self, host=HOST, port=PORT_SINGLE):
+        self.host = host
+        self.port = port
+
+    def start(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind((self.host, self.port))
+            srv.listen(5)
+            srv.settimeout(1.0)
+            print(f"[SERVER - Unicast Single-thread] Berjalan di {self.host}:{self.port}")
+            print("Menunggu koneksi... (tekan Ctrl+C untuk berhenti)\n")
+            try:
+                while True:
+                    try:
+                        conn, addr = srv.accept()
+                    except socket.timeout:
+                        continue
+                    conn.settimeout(None)
+                    handle_client(conn, addr, "Single-thread")
+            except KeyboardInterrupt:
+                print("\n[!] Server dihentikan oleh pengguna.")
+
+#  SERVER MULTI-THREAD (RELAY)
+
+class UnicastMultiServer:
+    def __init__(self, host=HOST, port=PORT_MULTI):
+        self.host = host
+        self.port = port
+
+    def start(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind((self.host, self.port))
+            srv.listen(20)
+            srv.settimeout(1.0)
+            print(f"[SERVER - Unicast Multi-thread Relay] Berjalan di {self.host}:{self.port}")
+            print("Menunggu koneksi... (tekan Ctrl+C untuk berhenti)\n")
+            try:
+                while True:
+                    try:
+                        conn, addr = srv.accept()
+                    except socket.timeout:
+                        continue
+                    conn.settimeout(None)
+                    t = threading.Thread(
+                        target=handle_client,
+                        args=(conn, addr, "Multi-thread"),
+                        daemon=True,
+                        name=f"Thread-{addr}"
+                    )
+                    t.start()
+                    active = threading.active_count() - 1
+                    print(f"[*] Thread baru untuk {addr} | Thread aktif: {active}")
+            except KeyboardInterrupt:
+                print("\n[!] Server dihentikan oleh pengguna.")
+
+#  ENTRY POINT
+
+def print_usage():
+    print("Penggunaan: python server.py <mode>")
+    print("  mode:")
+    print("    single  -> Unicast Single-thread (port 9090)")
+    print("    multi   -> Unicast Multi-thread Relay (port 9091)")
+
+def main():
+    if len(sys.argv) < 2:
+        print_usage()
+        sys.exit(1)
+
+    mode = sys.argv[1].strip().lower()
+    if mode == "single":
+        UnicastSingleServer().start()
+    elif mode == "multi":
+        UnicastMultiServer().start()
+    else:
+        print(f"[!] Mode tidak dikenal: '{mode}'")
+        print_usage()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
