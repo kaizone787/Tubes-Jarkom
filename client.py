@@ -143,3 +143,162 @@ def listener_thread(conn, username):
 
         else:
             safe_print(f"\n  [INFO] Pesan dari server: {header}")
+
+#  INPUT & KIRIM TEKS
+def prompt_text_input(subtype):
+    hint = TEXT_SUBTYPE_HINTS[subtype]
+    safe_print(f"\n  Ketik teks ({hint})")
+    if subtype == "paragraph":
+        lines = []
+        while True:
+            line = input("  > ")
+            if line.strip() == ".":
+                break
+            lines.append(line)
+        content = " ".join(lines).strip()
+    else:
+        content = input("  > ").strip()
+    while not content:
+        safe_print("  [!] Teks tidak boleh kosong.")
+        content = input("  > ").strip()
+    return content
+
+def prompt_file_path(allowed_exts, label):
+    while True:
+        path = input(f"  Path file {label}: ").strip().strip('"').strip("'")
+        if not path:
+            safe_print("  [!] Input tidak boleh kosong.")
+            continue
+        if not os.path.isfile(path):
+            safe_print(f"  [!] File tidak ditemukan: {path}")
+            continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in allowed_exts:
+            safe_print(f"  [!] Ekstensi harus salah satu dari: {allowed_exts}")
+            continue
+        return path
+
+def prompt_targets(mode):
+    """Minta input target tergantung mode."""
+    if mode == "broadcast":
+        return []
+    elif mode == "multicast":
+        with clients_lock:
+            online = [c for c in known_clients]
+        safe_print(f"  Klien online: {online}")
+        raw = input("  Masukkan username tujuan (pisah koma): ").strip()
+        targets = [t.strip() for t in raw.split(",") if t.strip()]
+        return targets
+    else:  # unicast
+        with clients_lock:
+            online = [c for c in known_clients]
+        safe_print(f"  Klien online: {online}")
+        target = input("  Masukkan username tujuan: ").strip()
+        return [target] if target else []
+
+#  MENU PENGIRIMAN
+def menu_message(sock, username):
+    while True:
+        print("\n" + "─"*50)
+        print("  PILIH JENIS PESAN:")
+        print("  1.  Teks singkat (1-5 kata)")
+        print("  2.  Teks kalimat (1 kalimat panjang)")
+        print("  3.  Teks paragraf")
+        print("  4.  Dokumen .txt")
+        print("  5.  Dokumen .docx")
+        print("  6.  Dokumen .pdf")
+        print("  7.  Gambar .jpg")
+        print("  8.  Gambar .png")
+        print("  9.  Audio .mp3")
+        print("  10. Video .mp4")
+        print("  L.  Lihat klien online")
+        print("  0.  Kembali / Tutup koneksi")
+        print("─"*50)
+        choice = input("  Pilihan: ").strip()
+
+        if choice == "0":
+            safe_print("  Menutup koneksi...")
+            break
+
+        if choice.upper() == "L":
+            with clients_lock:
+                safe_print(f"  Klien online: {list(known_clients)}")
+            continue
+
+        # Pilih mode pengiriman
+        print("\n  MODE PENGIRIMAN:")
+        print("  1. Unicast   (A -> B)")
+        print("  2. Multicast (A -> B, C, ...)")
+        print("  3. Broadcast (A -> Semua)")
+        mode_choice = input("  Mode: ").strip()
+        mode_map = {"1": "unicast", "2": "multicast", "3": "broadcast"}
+        mode = mode_map.get(mode_choice, "unicast")
+
+        targets = prompt_targets(mode)
+
+        if mode in ("unicast", "multicast") and not targets:
+            safe_print("  [!] Tidak ada target yang valid.")
+            continue
+
+        # Kirim teks
+        if choice in ("1", "2", "3"):
+            subtype_map = {"1": "short", "2": "sentence", "3": "paragraph"}
+            subtype = subtype_map[choice]
+            content = prompt_text_input(subtype)
+            header = {
+                "type":    "text",
+                "subtype": subtype,
+                "content": content,
+                "size":    len(content),
+                "mode":    mode,
+            }
+            if mode == "unicast":
+                header["target"] = targets[0]
+            elif mode == "multicast":
+                header["targets"] = targets
+            try:
+                send_header(sock, header)
+                safe_print("  [+] Pesan teks dikirim, menunggu ACK...")
+            except Exception as e:
+                safe_print(f"  [!] Gagal kirim: {e}")
+
+        # Kirim file
+        elif choice in FILE_TYPE_MAP:
+            exts, label = FILE_TYPE_MAP[choice]
+            filepath = prompt_file_path(exts, label)
+            filename = os.path.basename(filepath)
+            filesize = os.path.getsize(filepath)
+            ext      = os.path.splitext(filename)[1].lstrip(".").lower()
+
+            header = {
+                "type":     "file",
+                "subtype":  ext,
+                "filename": filename,
+                "size":     filesize,
+                "mode":     mode,
+            }
+            if mode == "unicast":
+                header["target"] = targets[0]
+            elif mode == "multicast":
+                header["targets"] = targets
+
+            try:
+                send_header(sock, header)
+                sent = 0
+                with open(filepath, "rb") as f:
+                    while True:
+                        chunk = f.read(BUFFER_SIZE)
+                        if not chunk:
+                            break
+                        sock.sendall(chunk)
+                        sent += len(chunk)
+                        if filesize > 0:
+                            pct = (sent / filesize) * 100
+                            print(f"\r  Progress: {sent}/{filesize} bytes ({pct:.1f}%)", end="", flush=True)
+                print()
+                safe_print(f"  [+] File '{filename}' dikirim, menunggu ACK...")
+            except Exception as e:
+                safe_print(f"  [!] Gagal kirim file: {e}")
+
+        else:
+            safe_print("  [!] Pilihan tidak valid.")
