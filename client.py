@@ -171,28 +171,36 @@ def listener_thread(conn, username):
 
 #  INPUT & KIRIM TEKS
 def prompt_text_input(subtype):
-    """Minta input teks dari pengguna sesuai subtipe."""
+    """Minta input teks dari pengguna sesuai subtipe. Return None jika dibatalkan."""
     hint = TEXT_SUBTYPE_HINTS[subtype]
-    safe_print(f"\n  Ketik teks ({hint})")
+    safe_print(f"\n  Ketik teks ({hint})  [ketik 0 untuk batal]")
     if subtype == "paragraph":
         lines = []
         while True:
             line = input("  > ")
+            if line.strip() == "0" and not lines:
+                return None
             if line.strip() == ".":
                 break
             lines.append(line)
         content = " ".join(lines).strip()
     else:
         content = input("  > ").strip()
+        if content == "0":
+            return None
     while not content:
         safe_print("  [!] Teks tidak boleh kosong.")
         content = input("  > ").strip()
+        if content == "0":
+            return None
     return content
 
 def prompt_file_path(allowed_exts, label):
-    """Minta path file dari pengguna dengan validasi ekstensi."""
+    """Minta path file dari pengguna dengan validasi ekstensi. Return None jika dibatalkan."""
     while True:
-        path = input(f"  Path file {label}: ").strip().strip('"').strip("'")
+        path = input(f"  Path file {label} [0 = batal]: ").strip().strip('"').strip("'")
+        if path == "0":
+            return None
         if not path:
             safe_print("  [!] Input tidak boleh kosong.")
             continue
@@ -206,21 +214,25 @@ def prompt_file_path(allowed_exts, label):
         return path
 
 def prompt_targets(mode):
-    """Minta input target tergantung mode."""
+    """Minta input target tergantung mode. Return None jika dibatalkan."""
     if mode == "broadcast":
         return []
     elif mode == "multicast":
         with clients_lock:
             online = list(known_clients)
         safe_print(f"  Klien online: {online}")
-        raw = input("  Masukkan username tujuan (pisah koma): ").strip()
+        raw = input("  Masukkan username tujuan (pisah koma) [0 = batal]: ").strip()
+        if raw == "0":
+            return None
         targets = [t.strip() for t in raw.split(",") if t.strip()]
         return targets
     else:  # unicast
         with clients_lock:
             online = list(known_clients)
         safe_print(f"  Klien online: {online}")
-        target = input("  Masukkan username tujuan: ").strip()
+        target = input("  Masukkan username tujuan [0 = batal]: ").strip()
+        if target == "0":
+            return None
         return [target] if target else []
 
 #  MENU PENGIRIMAN
@@ -263,11 +275,21 @@ def menu_message(sock, username):
         print("  1. Unicast   (A -> B)")
         print("  2. Multicast (A -> B, C, ...)")
         print("  3. Broadcast (A -> Semua)")
+        print("  0. Batal")
         mode_choice = input("  Mode: ").strip()
+        if mode_choice == "0":
+            safe_print("  [i] Dibatalkan.")
+            continue
         mode_map = {"1": "unicast", "2": "multicast", "3": "broadcast"}
-        mode = mode_map.get(mode_choice, "unicast")
+        mode = mode_map.get(mode_choice)
+        if not mode:
+            safe_print("  [!] Pilihan mode tidak valid.")
+            continue
 
         targets = prompt_targets(mode)
+        if targets is None:
+            safe_print("  [i] Dibatalkan.")
+            continue
 
         if mode in ("unicast", "multicast") and not targets:
             safe_print("  [!] Tidak ada target yang valid.")
@@ -278,6 +300,9 @@ def menu_message(sock, username):
             subtype_map = {"1": "short", "2": "sentence", "3": "paragraph"}
             subtype = subtype_map[choice]
             content = prompt_text_input(subtype)
+            if content is None:
+                safe_print("  [i] Dibatalkan.")
+                continue
             header = {
                 "type":    "text",
                 "subtype": subtype,
@@ -299,6 +324,9 @@ def menu_message(sock, username):
         elif choice in FILE_TYPE_MAP:
             exts, label = FILE_TYPE_MAP[choice]
             filepath = prompt_file_path(exts, label)
+            if filepath is None:
+                safe_print("  [i] Dibatalkan.")
+                continue
             filename = os.path.basename(filepath)
             filesize = os.path.getsize(filepath)
             ext      = os.path.splitext(filename)[1].lstrip(".").lower()
