@@ -11,7 +11,7 @@ import selectors
 HOST        = "0.0.0.0"
 PORT_SINGLE = 9090
 PORT_MULTI  = 9091
-BUFFER_SIZE = 4096
+BUFFER_SIZE = 65536  # Diperbesar jadi 64KB agar transfer file besar lebih cepat
 ENCODING    = "utf-8"
 SAVE_DIR    = "received_files"
 
@@ -166,7 +166,7 @@ class ClientSession:
         self.state      = self.ST_WAIT_LEN
         self.needed     = 4
         self.header     = None
-        self.file_data  = b""
+        self.file_data  = bytearray()
 
     def feed(self, data):
         """
@@ -201,7 +201,7 @@ class ClientSession:
                     if (self.header.get("type") == "file"
                             and self.header.get("size", 0) > 0):
                         self.needed    = self.header["size"]
-                        self.file_data = b""
+                        self.file_data = bytearray()
                         self.state     = self.ST_WAIT_FILE
                     else:
                         messages.append((self.header, b""))
@@ -212,11 +212,11 @@ class ClientSession:
             elif self.state == self.ST_WAIT_FILE:
                 remaining = self.needed - len(self.file_data)
                 take      = min(len(self.buffer), remaining)
-                self.file_data += self.buffer[:take]
+                self.file_data.extend(self.buffer[:take])
                 self.buffer     = self.buffer[take:]
 
                 if len(self.file_data) >= self.needed:
-                    messages.append((self.header, self.file_data))
+                    messages.append((self.header, bytes(self.file_data)))
                     self._reset()
                 else:
                     break
@@ -228,7 +228,7 @@ class ClientSession:
         self.state     = self.ST_WAIT_LEN
         self.needed    = 4
         self.header    = None
-        self.file_data = b""
+        self.file_data = bytearray()
 
 
 class UnicastSingleServer:
@@ -438,14 +438,14 @@ class UnicastSingleServer:
 
 def read_file_payload(conn, filesize):
     """Baca filesize byte dari conn (blocking)."""
-    received = b""
+    received = bytearray()
     while len(received) < filesize:
         to_read = min(BUFFER_SIZE, filesize - len(received))
         chunk = conn.recv(to_read)
         if not chunk:
             raise ConnectionError("Koneksi terputus saat membaca payload file.")
-        received += chunk
-    return received
+        received.extend(chunk)
+    return bytes(received)
 
 
 def handle_client(conn, addr, mode_label):

@@ -9,7 +9,7 @@ import time
 #  KONFIGURASI
 PORT_SINGLE  = 9090
 PORT_MULTI   = 9091
-BUFFER_SIZE  = 4096
+BUFFER_SIZE  = 65536
 ENCODING     = "utf-8"
 SAVE_DIR     = "received_files"
 
@@ -121,6 +121,7 @@ def listener_thread(conn, username):
 
             save_path     = os.path.join(SAVE_DIR, f"from_{sender}_{filename}")
             received_size = 0
+            last_print    = 0
             try:
                 with open(save_path, "wb") as f:
                     while received_size < filesize:
@@ -130,11 +131,16 @@ def listener_thread(conn, username):
                             raise ConnectionError("Koneksi terputus saat terima file.")
                         f.write(chunk)
                         received_size += len(chunk)
+                        
                         if filesize > 0:
-                            pct = (received_size / filesize) * 100
-                            print(f"\r  Progress terima: {received_size}/{filesize} "
-                                  f"bytes ({pct:.1f}%)", end="", flush=True)
-                print()  # newline setelah progress
+                            now = time.time()
+                            if now - last_print > 0.1:  # Update terminal maksimal 10x per detik
+                                pct = (received_size / filesize) * 100
+                                print(f"\r  Progress terima: {received_size}/{filesize} "
+                                      f"bytes ({pct:.1f}%)", end="", flush=True)
+                                last_print = now
+                                
+                print(f"\r  Progress terima: {filesize}/{filesize} bytes (100.0%)", flush=True)
                 safe_print(f"  File disimpan: {save_path}")
             except ConnectionError as e:
                 safe_print(f"\n  [!] Error terima file: {e}")
@@ -312,6 +318,7 @@ def menu_message(sock, username):
             try:
                 send_header(sock, header)
                 sent = 0
+                last_print = 0
                 with open(filepath, "rb") as f:
                     while True:
                         chunk = f.read(BUFFER_SIZE)
@@ -319,11 +326,16 @@ def menu_message(sock, username):
                             break
                         sock.sendall(chunk)
                         sent += len(chunk)
+                        
                         if filesize > 0:
-                            pct = (sent / filesize) * 100
-                            print(f"\r  Progress kirim: {sent}/{filesize} "
-                                  f"bytes ({pct:.1f}%)", end="", flush=True)
-                print()  # newline setelah progress
+                            now = time.time()
+                            if now - last_print > 0.1:  # Update terminal maksimal 10x per detik
+                                pct = (sent / filesize) * 100
+                                print(f"\r  Progress kirim: {sent}/{filesize} "
+                                      f"bytes ({pct:.1f}%)", end="", flush=True)
+                                last_print = now
+                                
+                print(f"\r  Progress kirim: {filesize}/{filesize} bytes (100.0%)", flush=True)
                 safe_print(f"  [+] File '{filename}' dikirim, menunggu ACK...")
             except Exception as e:
                 safe_print(f"  [!] Gagal kirim file: {e}")
